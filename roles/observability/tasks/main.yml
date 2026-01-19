@@ -1,21 +1,92 @@
-- name: Create monitoring data directories
+- name: Create monitoring base directory
+  file:
+    path: /opt/monitoring
+    state: directory
+    mode: '0755'
+
+- name: Create Prometheus data directory
+  file:
+    path: /opt/monitoring/prometheus
+    state: directory
+    owner: 65534  # Prometheus runs as nobody (UID 65534)
+    group: 65534
+    mode: '0755'
+
+- name: Create Loki data directory
+  file:
+    path: /opt/monitoring/loki
+    state: directory
+    owner: 10001  # Loki default UID
+    group: 10001
+    mode: '0755'
+
+- name: Create Grafana data directory
+  file:
+    path: /opt/monitoring/grafana
+    state: directory
+    owner: 472  # Grafana default UID
+    group: 472
+    mode: '0755'
+
+- name: Create Grafana provisioning directories
   file:
     path: "{{ item }}"
     state: directory
-    owner: 1000
-    group: 1000
+    owner: 472
+    group: 472
+    mode: '0755'
   loop:
-    - /opt/monitoring/prometheus
-    - /opt/monitoring/loki
-    - /opt/monitoring/grafana
+    - /opt/monitoring/grafana/provisioning
+    - /opt/monitoring/grafana/provisioning/datasources
+
+- name: Deploy Grafana datasource provisioning
+  template:
+    src: grafana/datasources.yml.j2
+    dest: /opt/monitoring/grafana/provisioning/datasources/datasources.yml
+    owner: 472
+    group: 472
+    mode: '0644'
+
+- name: Deploy Prometheus configuration
+  template:
+    src: prometheus.yml.j2
+    dest: /opt/monitoring/prometheus.yml
+    owner: 65534
+    group: 65534
+    mode: '0644'
+
+- name: Deploy Loki configuration
+  template:
+    src: loki-config.yml.j2
+    dest: /opt/monitoring/loki-config.yml
+    owner: 10001
+    group: 10001
+    mode: '0644'
 
 - name: Deploy Docker Compose file from template
   template:
     src: docker-compose.yml.j2
     dest: /opt/monitoring/docker-compose.yml
+    mode: '0644'
 
 - name: Start Monitoring Stack
-  community.docker.docker_compose:
+  community.docker.docker_compose_v2:
     project_src: /opt/monitoring
     state: present
-    pull: yes
+    pull: always
+  register: docker_compose_result
+
+- name: Wait for services to be healthy
+  wait_for:
+    host: localhost
+    port: "{{ item }}"
+    delay: 5
+    timeout: 60
+  loop:
+    - 3000  # Grafana
+    - 9090  # Prometheus
+    - 3100  # Loki
+
+- name: Display deployment status
+  debug:
+    msg: "Observability stack deployed successfully. Access Grafana at http://{{ ansible_host }}:3000"

@@ -1,0 +1,27 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'ionos-monitoring'
+    environment: 'production'
+
+# Alertmanager configuration (optional)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ['localhost:9093']
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Remote metrics from external devices
+  # Add your remote targets here
+  # - job_name: 'remote-nodes'
+  #   static_configs:
+  #     - targets: ['192.168.1.10:9100', '192.168.1.11:9100']
+  #       labels:
+  #         group: 'production'

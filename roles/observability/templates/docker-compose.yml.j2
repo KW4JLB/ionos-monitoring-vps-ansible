@@ -1,22 +1,58 @@
 version: '3.8'
+
+networks:
+  monitoring:
+    driver: bridge
+
 services:
   prometheus:
     image: prom/prometheus:v2.45.0
+    container_name: prometheus
+    networks:
+      - monitoring
     volumes:
       - /opt/monitoring/prometheus:/prometheus
+      - /opt/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
     command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
       - '--storage.tsdb.retention.time=15d'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
 
   loki:
     image: grafana/loki:2.9.0
+    container_name: loki
+    networks:
+      - monitoring
+    volumes:
+      - /opt/monitoring/loki:/loki
+      - /opt/monitoring/loki-config.yml:/etc/loki/local-config.yaml
     environment:
       - S3_ID={{ vault_s3_access_key }}
       - S3_KEY={{ vault_s3_secret_key }}
-    # Loki would use these to write to IONOS Object Storage
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    restart: unless-stopped
 
   grafana:
     image: grafana/grafana:latest
+    container_name: grafana
+    networks:
+      - monitoring
     environment:
       - GF_SECURITY_ADMIN_PASSWORD={{ vault_grafana_admin_password }}
+      - GF_PATHS_PROVISIONING=/etc/grafana/provisioning
+    volumes:
+      - /opt/monitoring/grafana:/var/lib/grafana
+      - /opt/monitoring/grafana/provisioning:/etc/grafana/provisioning
     ports:
       - "3000:3000"
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+      - loki

@@ -1,7 +1,7 @@
 # Disposable Observability Stack (Ansible-Powered)
 
 ## 🎯 Project Intent
-This project automates a production-grade observability stack (Grafana, Prometheus, Loki, Alloy) on a single, low-cost VPS (specifically targeted for **IONOS VPS M** at ~$6-10/mo). 
+This project automates a production-grade observability stack (Grafana, Prometheus, Loki) on a single, low-cost VPS (specifically targeted for **IONOS VPS M** at ~$6-10/mo). 
 
 The core philosophy is **Disposable Infrastructure**: The server itself is treated as a temporary resource. All configurations are version-controlled in this repository, and all persistent data (logs/metrics) should ideally be backed up or offloaded (e.g., Loki to S3) to allow for total server recreation with zero data loss.
 
@@ -17,6 +17,7 @@ The core philosophy is **Disposable Infrastructure**: The server itself is treat
 - `roles/common/`: Hardens the OS, configures UFW, and sets up Fail2Ban.
 - `roles/docker/`: Installs the official Docker Engine and Compose plugin.
 - `roles/observability/`: Templates the monitoring configs and launches the Docker stack.
+- `roles/backup/`: Configures automated daily backups of all monitoring data.
 
 ## 🤖 AI Ingestion Context (For Copilot/Cursor)
 When generating new tasks or roles, please adhere to these constraints:
@@ -27,16 +28,49 @@ When generating new tasks or roles, please adhere to these constraints:
 5. **Jinja2 Templates:** Use `.j2` templates for configuration files (Prometheus, Loki, Docker Compose) to allow for dynamic variable injection.
 
 ## 🚀 Deployment
-1. Update `inventory/production.yml` with the target VPS IP.
-2. Ensure your local machine has the Vault password in `.vault_pass`.
-3. Execute:
+1. **Install Ansible Collections:**
    ```bash
+   ansible-galaxy collection install -r requirements.yml
+   ```
+
+2. Update `inventory/production.yml` with the target VPS IP.
+
+3. **Option A:** Create a `.vault_pass` file with your vault password (recommended for automation):
+   ```bash
+   echo "your_vault_password" > .vault_pass
+   chmod 600 .vault_pass
+   ```
+4. **Option B:** Use `--ask-vault-pass` flag to enter password interactively.
+
+5. Execute:
+   ```bash
+   # Using .vault_pass file (configured in ansible.cfg)
+   ansible-playbook site.yml
+   
+   # Or using interactive password prompt
    ansible-playbook site.yml --ask-vault-pass
    ```
-## 🛠️ Maintenance & Scaling
-Vertical Scaling: If upgrading VPS size (e.g., M to L), update the RAM limits in group_vars/monitoring.yml and re-run the playbook.
 
-Disposability Test: To test disposability, delete the VPS, provision a fresh one, and run this playbook. The stack should be fully functional in < 2 minutes.
+## 💾 Backup & Restore
+Automated backups run daily at 2 AM and are stored in `/opt/backups/` on the server. Backups are retained for 7 days.
+
+To manually trigger a backup:
+```bash
+ssh root@your-server /usr/local/bin/backup-monitoring.sh
+```
+
+To restore from a backup, see `/opt/backups/RESTORE.md` on the server.
+## 🛠️ Maintenance & Scaling
+**Vertical Scaling:** If upgrading VPS size (e.g., M to L), update the RAM limits in `group_vars/monitoring.yml` and re-run the playbook.
+
+**Disposability Test:** To test disposability:
+1. Download latest backup from `/opt/backups/`
+2. Delete the VPS and provision a fresh one
+3. Run this playbook
+4. Restore the backup
+5. The stack should be fully functional in < 5 minutes
+
+**Grafana Access:** After deployment, Grafana is accessible at `http://your-server-ip:3000` with Prometheus and Loki datasources pre-configured.
 
 
 ### **Why this helps AI tools:**

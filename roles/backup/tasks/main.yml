@@ -1,0 +1,90 @@
+---
+- name: Install backup utilities
+  apt:
+    name:
+      - rsync
+      - tar
+    state: present
+
+- name: Create backup directory
+  file:
+    path: /opt/backups
+    state: directory
+    mode: '0700'
+
+- name: Create backup script
+  copy:
+    dest: /usr/local/bin/backup-monitoring.sh
+    mode: '0755'
+    content: |
+      #!/bin/bash
+      # Backup script for monitoring stack
+      
+      BACKUP_DIR="/opt/backups"
+      TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+      BACKUP_FILE="monitoring-backup-${TIMESTAMP}.tar.gz"
+      
+      # Stop containers to ensure consistent backup
+      cd /opt/monitoring
+      docker compose stop
+      
+      # Create backup
+      tar -czf "${BACKUP_DIR}/${BACKUP_FILE}" \
+        /opt/monitoring/prometheus \
+        /opt/monitoring/loki \
+        /opt/monitoring/grafana \
+        /opt/monitoring/*.yml
+      
+      # Restart containers
+      docker compose start
+      
+      # Keep only last 7 backups
+      cd "${BACKUP_DIR}"
+      ls -t monitoring-backup-*.tar.gz | tail -n +8 | xargs -r rm
+      
+      echo "Backup completed: ${BACKUP_FILE}"
+
+- name: Create backup cron job (runs daily at 2 AM)
+  cron:
+    name: "Backup monitoring stack"
+    minute: "0"
+    hour: "2"
+    job: "/usr/local/bin/backup-monitoring.sh >> /var/log/monitoring-backup.log 2>&1"
+    user: root
+
+- name: Create restore documentation
+  copy:
+    dest: /opt/backups/RESTORE.md
+    mode: '0644'
+    content: |
+      # Restore Monitoring Stack
+      
+      ## Automatic Restore
+      To restore from a backup:
+      
+      ```bash
+      cd /opt/monitoring
+      docker compose down
+      
+      # Extract backup (replace with your backup file)
+      tar -xzf /opt/backups/monitoring-backup-YYYYMMDD_HHMMSS.tar.gz -C /
+      
+      docker compose up -d
+      ```
+      
+      ## Manual Steps
+      1. Stop all containers: `cd /opt/monitoring && docker compose down`
+      2. Extract backup to root: `tar -xzf backup.tar.gz -C /`
+      3. Verify permissions are correct (UID 472, 10001, 65534)
+      4. Start containers: `docker compose up -d`
+      
+      ## Remote Backup (Optional)
+      To sync backups to remote storage:
+      
+      ```bash
+      # Using rsync
+      rsync -avz /opt/backups/ user@remote:/backups/monitoring/
+      
+      # Using rclone (for S3/Object Storage)
+      rclone sync /opt/backups/ remote:bucket/monitoring/
+      ```

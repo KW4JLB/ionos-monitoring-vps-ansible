@@ -14,8 +14,14 @@
   roles:
     - docker
 
-- name: Deploy Observability Stack (Grafana/Loki/Prom/Alloy)
+- name: Deploy Observability Stack (Grafana/Prometheus/Loki)
   hosts: monitoring
   become: yes
   roles:
     - observability
+
+- name: Configure Automated Backups
+  hosts: monitoring
+  become: yes
+  roles:
+    - backup
