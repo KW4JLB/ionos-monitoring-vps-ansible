@@ -1,0 +1,44 @@
+---
+- name: Update apt cache and upgrade packages
+  apt:
+    update_cache: yes
+    upgrade: dist
+    cache_valid_time: 3600
+
+- name: Install baseline administrative tools
+  apt:
+    name:
+      - curl
+      - htop
+      - ufw
+      - fail2ban
+      - unattended-upgrades
+    state: present
+
+- name: Configure unattended-upgrades for security patches
+  copy:
+    src: 20auto-upgrades
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+
+- name: Configure Fail2Ban (SSH Hardening)
+  template:
+    src: jail.local.j2
+    dest: /etc/fail2ban/jail.local
+  notify: restart fail2ban
+
+- name: UFW - Allow SSH (Critical: Don't lock yourself out)
+  community.general.ufw:
+    rule: allow
+    name: OpenSSH
+
+- name: UFW - Allow Grafana Web UI
+  community.general.ufw:
+    rule: allow
+    port: '3000'
+    proto: tcp
+
+- name: UFW - Set default deny and enable
+  community.general.ufw:
+    state: enabled
+    direction: incoming
+    policy: deny

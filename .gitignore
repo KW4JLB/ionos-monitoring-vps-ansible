@@ -1,0 +1,47 @@
+# Ansible Vault Password
+.vault_pass
+*.vault_pass
+
+# Python Virtual Environments
+venv/
+env/
+.venv/
+.env/
+ENV/
+env.bak/
+venv.bak/
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# IDE & Editor Files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Ansible Retry Files
+*.retry
+
+# Logs
+*.log
+
+# Temporary Files
+tmp/
+temp/
+*.tmp
+
+# SSH Keys (if accidentally placed in repo)
+*.pem
+*.key
+id_rsa*
+
+# Backup Files
+*.bak
+*.backup

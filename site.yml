@@ -1,0 +1,21 @@
+---
+# site.yml
+# Primary entry point for the observability infrastructure
+
+- name: Basic OS Hardening & Common Setup
+  hosts: monitoring
+  become: yes
+  roles:
+    - common
+
+- name: Docker Engine Orchestration
+  hosts: monitoring
+  become: yes
+  roles:
+    - docker
+
+- name: Deploy Observability Stack (Grafana/Loki/Prom/Alloy)
+  hosts: monitoring
+  become: yes
+  roles:
+    - observability

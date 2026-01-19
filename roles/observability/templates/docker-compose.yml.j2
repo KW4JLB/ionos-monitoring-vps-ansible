@@ -1,0 +1,22 @@
+version: '3.8'
+services:
+  prometheus:
+    image: prom/prometheus:v2.45.0
+    volumes:
+      - /opt/monitoring/prometheus:/prometheus
+    command:
+      - '--storage.tsdb.retention.time=15d'
+
+  loki:
+    image: grafana/loki:2.9.0
+    environment:
+      - S3_ID={{ vault_s3_access_key }}
+      - S3_KEY={{ vault_s3_secret_key }}
+    # Loki would use these to write to IONOS Object Storage
+
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD={{ vault_grafana_admin_password }}
+    ports:
+      - "3000:3000"

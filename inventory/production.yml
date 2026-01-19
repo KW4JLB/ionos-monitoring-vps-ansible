@@ -1,0 +1,5 @@
+monitoring:
+  hosts:
+    obs-server-01:
+      ansible_host: 123.123.123.123 # Replace with your IONOS VPS IP
+      ansible_user: root

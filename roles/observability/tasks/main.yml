@@ -1,0 +1,21 @@
+- name: Create monitoring data directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: 1000
+    group: 1000
+  loop:
+    - /opt/monitoring/prometheus
+    - /opt/monitoring/loki
+    - /opt/monitoring/grafana
+
+- name: Deploy Docker Compose file from template
+  template:
+    src: docker-compose.yml.j2
+    dest: /opt/monitoring/docker-compose.yml
+
+- name: Start Monitoring Stack
+  community.docker.docker_compose:
+    project_src: /opt/monitoring
+    state: present
+    pull: yes
