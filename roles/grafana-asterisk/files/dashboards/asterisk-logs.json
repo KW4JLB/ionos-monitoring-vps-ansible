@@ -184,7 +184,7 @@
             "type": "loki",
             "uid": "${loki_datasource}"
           },
-          "expr": "count_over_time({job=\"$job\", filename=\"$filename\"} |= \"WARNING\" [$__interval])",
+          "expr": "count_over_time({job=\"$job\", instance=~\"$instance\", filename=\"$filename\"} |= \"WARNING\" [$__interval])",
           "refId": "A"
         }
       ],
@@ -245,7 +245,7 @@
             "type": "loki",
             "uid": "${loki_datasource}"
           },
-          "expr": "count_over_time({job=\"$job\", filename=\"$filename\"} |= \"ERROR\" [$__interval])",
+          "expr": "count_over_time({job=\"$job\", instance=~\"$instance\", filename=\"$filename\"} |= \"ERROR\" [$__interval])",
           "refId": "A"
         }
       ],
@@ -314,7 +314,7 @@
             "type": "loki",
             "uid": "${loki_datasource}"
           },
-          "expr": "( count_over_time({job=\"$job\", filename=\"$filename\"} |= \"ERROR\" [$__interval]) / count_over_time({job=\"$job\", filename=\"$filename\"} [$__interval]) )",
+          "expr": "( count_over_time({job=\"$job\", instance=~\"$instance\", filename=\"$filename\"} |= \"ERROR\" [$__interval]) / count_over_time({job=\"$job\", instance=~\"$instance\", filename=\"$filename\"} [$__interval]) )",
           "refId": "A"
         }
       ],
@@ -375,7 +375,7 @@
             "type": "loki",
             "uid": "${loki_datasource}"
           },
-          "expr": "bytes_over_time({job=\"$job\", filename=\"$filename\"} [$__interval])",
+          "expr": "bytes_over_time({job=\"$job\", instance=~\"$instance\", filename=\"$filename\"} [$__interval])",
           "refId": "A"
         }
       ],
@@ -513,7 +513,7 @@
             "type": "loki",
             "uid": "${loki_datasource}"
           },
-          "expr": "count_over_time({job=\"$job\", filename=\"$filename\"}[$__interval])",
+          "expr": "count_over_time({job=\"$job\", instance=~\"$instance\", filename=\"$filename\"}[$__interval])",
           "refId": "A"
         },
         {
@@ -521,7 +521,7 @@
             "type": "loki",
             "uid": "${loki_datasource}"
           },
-          "expr": "count_over_time({job=\"$job\", filename=\"$filename\"} |= \"WARNING\" [$__interval])",
+          "expr": "count_over_time({job=\"$job\", instance=~\"$instance\", filename=\"$filename\"} |= \"WARNING\" [$__interval])",
           "hide": false,
           "refId": "B"
         },
@@ -530,7 +530,7 @@
             "type": "loki",
             "uid": "${loki_datasource}"
           },
-          "expr": "count_over_time({job=\"$job\", filename=\"$filename\"} |= \"ERROR\" [$__interval])",
+          "expr": "count_over_time({job=\"$job\", instance=~\"$instance\", filename=\"$filename\"} |= \"ERROR\" [$__interval])",
           "hide": false,
           "refId": "C"
         }
@@ -577,7 +577,7 @@
                 "type": "loki",
                 "uid": "${loki_datasource}"
               },
-              "expr": "{job=~\"$job\", filename=~\"$filename\"} |= \"ERROR\"",
+              "expr": "{job=~\"$job\", instance=~\"$instance\", filename=~\"$filename\"} |= \"ERROR\"",
               "refId": "A"
             }
           ],
@@ -627,7 +627,7 @@
                 "type": "loki",
                 "uid": "${loki_datasource}"
               },
-              "expr": "{job=~\"$job\", filename=~\"$filename\"} |= \"WARNING\"",
+              "expr": "{job=~\"$job\", instance=~\"$instance\", filename=~\"$filename\"} |= \"WARNING\"",
               "refId": "A"
             }
           ],
@@ -677,7 +677,7 @@
                 "type": "loki",
                 "uid": "${loki_datasource}"
               },
-              "expr": "{job=~\"$job\", filename=~\"$filename\"}",
+              "expr": "{job=~\"$job\", instance=~\"$instance\", filename=~\"$filename\"}",
               "refId": "A"
             }
           ],
@@ -737,6 +737,30 @@
         "regex": "^.*asterisk.*",
         "skipUrlSync": false,
         "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "loki",
+          "uid": "${loki_datasource}"
+        },
+        "definition": "label_values({job=~\"$job\"}, instance)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Instance",
+        "multi": true,
+        "name": "instance",
+        "options": [],
+        "query": "label_values({job=~\"$job\"}, instance)",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
         "type": "query"
       },
       {
