@@ -20,6 +20,13 @@
   roles:
     - observability
 
+- name: Install Asterisk Dashboards
+  hosts: monitoring
+  become: yes
+  tags: asterisk
+  roles:
+    - grafana-asterisk
+
 - name: Configure Automated Backups
   hosts: monitoring
   become: yes

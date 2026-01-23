@@ -1,0 +1,149 @@
+---
+# Grafana Asterisk Dashboard Role
+# Installs pre-built Asterisk integration dashboards for monitoring
+# Documentation: https://grafana.com/docs/grafana-cloud/monitor-infrastructure/integrations/integration-reference/integration-asterisk/
+
+- name: Create Grafana provisioning dashboards directory
+  file:
+    path: /opt/monitoring/grafana/provisioning/dashboards
+    state: directory
+    owner: 472
+    group: 472
+    mode: '0755'
+
+- name: Create Asterisk dashboards directory
+  file:
+    path: /opt/monitoring/grafana/dashboards/asterisk
+    state: directory
+    owner: 472
+    group: 472
+    mode: '0755'
+
+- name: Deploy dashboard provisioning configuration
+  copy:
+    content: |
+      apiVersion: 1
+      providers:
+        - name: 'asterisk-dashboards'
+          orgId: 1
+          folder: 'Asterisk Monitoring'
+          type: file
+          disableDeletion: false
+          updateIntervalSeconds: 5
+          allowUiUpdates: true
+          options:
+            path: /var/lib/grafana/dashboards/asterisk
+    dest: /opt/monitoring/grafana/provisioning/dashboards/asterisk.yml
+    owner: 472
+    group: 472
+    mode: '0644'
+
+- name: Remove existing dashboard files to force refresh
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /opt/monitoring/grafana/dashboards/asterisk/asterisk-overview.json
+    - /opt/monitoring/grafana/dashboards/asterisk/asterisk-logs.json
+
+- name: Copy Asterisk Overview dashboard
+  copy:
+    src: dashboards/asterisk-overview.json
+    dest: /opt/monitoring/grafana/dashboards/asterisk/asterisk-overview.json
+    owner: 472
+    group: 472
+    mode: '0644'
+    force: yes
+
+- name: Copy Asterisk Logs dashboard
+  copy:
+    src: dashboards/asterisk-logs.json
+    dest: /opt/monitoring/grafana/dashboards/asterisk/asterisk-logs.json
+    owner: 472
+    group: 472
+    mode: '0644'
+    force: yes
+
+- name: Update dashboard file timestamps to force reload
+  shell: touch /opt/monitoring/grafana/dashboards/asterisk/*.json
+  become: yes
+
+- name: Wait for Grafana API to be ready
+  uri:
+    url: "https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}/api/health"
+    method: GET
+    status_code: 200
+    timeout: 30
+    validate_certs: false
+  retries: 10
+  delay: 5
+
+- name: Check if Asterisk Monitoring folder exists
+  uri:
+    url: "https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}/api/folders/asterisk-folder"
+    method: GET
+    headers:
+      Authorization: "Basic {{ ('admin:' + vault_grafana_admin_password) | b64encode }}"
+    status_code: [200, 404]
+    validate_certs: false
+  register: folder_check
+
+- name: Create Asterisk Monitoring folder in Grafana
+  uri:
+    url: "https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}/api/folders"
+    method: POST
+    headers:
+      Authorization: "Basic {{ ('admin:' + vault_grafana_admin_password) | b64encode }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      uid: "asterisk-folder"
+      title: "Asterisk Monitoring"
+    status_code: [200, 409]  # 409 = folder already exists
+    validate_certs: false
+  register: asterisk_folder
+  when: folder_check.status == 404
+
+- name: Restart Grafana service to load new dashboards
+  community.docker.docker_compose_v2:
+    project_src: /opt/monitoring
+    services:
+      - grafana
+    state: present
+    recreate: always
+    pull: never
+  register: grafana_restart
+
+- name: Wait for Grafana to be ready after restart
+  uri:
+    url: "https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}/api/health"
+    method: GET
+    status_code: 200
+    timeout: 30
+    validate_certs: false
+  retries: 20
+  delay: 15
+
+- name: Trigger dashboard reload via API
+  uri:
+    url: "https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}/api/admin/provisioning/dashboards/reload"
+    method: POST
+    headers:
+      Authorization: "Basic {{ ('admin:' + vault_grafana_admin_password) | b64encode }}"
+    status_code: [200, 204]
+    validate_certs: false
+  ignore_errors: yes
+
+- name: Display Asterisk dashboards deployment status
+  debug:
+    msg: 
+      - "Asterisk dashboards deployed successfully!"
+      - "Access dashboards at: https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}/dashboards/f/asterisk-folder/"
+      - "Available dashboards:"
+      - "  - Asterisk Overview: Monitor system metrics, calls, channels"
+      - "  - Asterisk Logs: View and analyze Asterisk log entries"
+      - ""
+      - "Configure Asterisk Prometheus metrics on port 8088:"
+      - "  - Enable prometheus.conf: enabled=yes, uri=metrics"
+      - "  - Enable http.conf: enabled=yes, bindport=8088"
+      - "  - Enable logger.conf for log monitoring"
