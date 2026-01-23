@@ -5,6 +5,40 @@ networks:
     driver: bridge
 
 services:
+  nginx-proxy:
+    image: nginxproxy/nginx-proxy:latest
+    container_name: nginx-proxy
+    networks:
+      - monitoring
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+      - /opt/monitoring/nginx/certs:/etc/nginx/certs
+      - /opt/monitoring/nginx/vhost.d:/etc/nginx/vhost.d
+      - /opt/monitoring/nginx/html:/usr/share/nginx/html
+    labels:
+      - "com.github.jrcs.letsencrypt_nginx_proxy_companion.nginx_proxy"
+    restart: unless-stopped
+
+  nginx-proxy-acme:
+    image: nginxproxy/acme-companion:latest
+    container_name: nginx-proxy-acme
+    networks:
+      - monitoring
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /opt/monitoring/nginx/certs:/etc/nginx/certs
+      - /opt/monitoring/nginx/vhost.d:/etc/nginx/vhost.d
+      - /opt/monitoring/nginx/html:/usr/share/nginx/html
+      - /opt/monitoring/nginx/acme:/etc/acme.sh
+    environment:
+      - DEFAULT_EMAIL={{ letsencrypt_email | default('') }}
+    depends_on:
+      - nginx-proxy
+    restart: unless-stopped
+
   prometheus:
     image: prom/prometheus:v2.45.0
     container_name: prometheus
@@ -47,12 +81,16 @@ services:
     environment:
       - GF_SECURITY_ADMIN_PASSWORD={{ vault_grafana_admin_password }}
       - GF_PATHS_PROVISIONING=/etc/grafana/provisioning
+      - VIRTUAL_HOST={{ grafana_domain | default('monitoring.kw4jlb.com') }}
+      - LETSENCRYPT_HOST={{ grafana_domain | default('monitoring.kw4jlb.com') }}
+      - LETSENCRYPT_EMAIL={{ letsencrypt_email | default('admin@example.com') }}
     volumes:
       - /opt/monitoring/grafana:/var/lib/grafana
       - /opt/monitoring/grafana/provisioning:/etc/grafana/provisioning
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
     restart: unless-stopped
     depends_on:
       - prometheus
       - loki
+      - nginx-proxy

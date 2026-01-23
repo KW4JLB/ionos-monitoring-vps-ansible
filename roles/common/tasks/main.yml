@@ -47,6 +47,18 @@
     rule: allow
     name: OpenSSH
 
+- name: UFW - Allow HTTP (Let's Encrypt verification)
+  community.general.ufw:
+    rule: allow
+    port: '80'
+    proto: tcp
+
+- name: UFW - Allow HTTPS (SSL/TLS traffic)
+  community.general.ufw:
+    rule: allow
+    port: '443'
+    proto: tcp
+
 - name: UFW - Allow Grafana Web UI
   community.general.ufw:
     rule: allow
