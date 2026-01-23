@@ -82,6 +82,11 @@ services:
     environment:
       - GF_SECURITY_ADMIN_PASSWORD={{ vault_grafana_admin_password }}
       - GF_PATHS_PROVISIONING=/etc/grafana/provisioning
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_DISABLE_LOGIN_FORM=false
+      - GF_USERS_AUTO_ASSIGN_ORG=true
+      - GF_USERS_AUTO_ASSIGN_ORG_ID=1
+      - GF_USERS_AUTO_ASSIGN_ORG_ROLE=Viewer
       - VIRTUAL_HOST={{ grafana_domain | default('monitoring.kw4jlb.com') }}
       - LETSENCRYPT_HOST={{ grafana_domain | default('monitoring.kw4jlb.com') }}
       - LETSENCRYPT_EMAIL={{ letsencrypt_email | default('admin@example.com') }}
