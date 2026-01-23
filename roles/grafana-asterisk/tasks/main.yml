@@ -45,6 +45,7 @@
   loop:
     - /opt/monitoring/grafana/dashboards/asterisk/asterisk-overview.json
     - /opt/monitoring/grafana/dashboards/asterisk/asterisk-logs.json
+    - /opt/monitoring/grafana/dashboards/asterisk/system-health.json
 
 - name: Copy Asterisk Overview dashboard
   copy:
@@ -59,6 +60,15 @@
   copy:
     src: dashboards/asterisk-logs.json
     dest: /opt/monitoring/grafana/dashboards/asterisk/asterisk-logs.json
+    owner: 472
+    group: 472
+    mode: '0644'
+    force: yes
+
+- name: Copy Enhanced System Health dashboard
+  copy:
+    src: dashboards/system-health-enhanced.json
+    dest: /opt/monitoring/grafana/dashboards/asterisk/system-health.json
     owner: 472
     group: 472
     mode: '0644'
