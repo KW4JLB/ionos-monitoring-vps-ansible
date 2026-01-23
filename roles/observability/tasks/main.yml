@@ -74,19 +74,97 @@
     project_src: /opt/monitoring
     state: present
     pull: always
+    recreate: always
   register: docker_compose_result
 
 - name: Wait for services to be healthy
   wait_for:
-    host: localhost
+    host: "{{ ansible_host }}"
     port: "{{ item }}"
     delay: 5
     timeout: 60
   loop:
-    - 3000  # Grafana
+    - 443   # HTTPS nginx-proxy (Grafana access)
     - 9090  # Prometheus
     - 3100  # Loki
 
+- name: Wait for Grafana API to be ready
+  uri:
+    url: "https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}/api/health"
+    method: GET
+    status_code: 200
+    timeout: 30
+    validate_certs: false
+  retries: 10
+  delay: 5
+
+- name: Create Grafana users via API
+  uri:
+    url: "https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}/api/admin/users"
+    method: POST
+    headers:
+      Authorization: "Basic {{ ('admin:' + vault_grafana_admin_password) | b64encode }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "{{ item.name }}"
+      email: "{{ item.email }}"
+      login: "{{ item.login }}"
+      password: "{{ item.password }}"
+    status_code: [200, 412]  # 412 = user already exists
+    validate_certs: false
+  loop: "{{ grafana_users | default([]) }}"
+  when: grafana_users is defined
+  register: created_users
+
+- name: Get user ID for admin permission setting
+  uri:
+    url: "https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}/api/users/lookup?loginOrEmail={{ item.login }}"
+    method: GET
+    headers:
+      Authorization: "Basic {{ ('admin:' + vault_grafana_admin_password) | b64encode }}"
+    status_code: [200, 404]
+    validate_certs: false
+  loop: "{{ grafana_users | default([]) }}"
+  when: grafana_users is defined and (item.is_admin | default(false))
+  register: user_lookup
+
+- name: Set user as admin via API  
+  uri:
+    url: "https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}/api/admin/users/{{ item.json.id }}/permissions"
+    method: PUT
+    headers:
+      Authorization: "Basic {{ ('admin:' + vault_grafana_admin_password) | b64encode }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      isGrafanaAdmin: true
+    status_code: [200, 404]  # 404 if user doesn't exist
+    validate_certs: false
+  loop: "{{ user_lookup.results | default([]) }}"
+  when: 
+    - user_lookup.results is defined
+    - item.json is defined
+    - item.json.id is defined
+
+- name: Set organization role to Admin for admin users
+  uri:
+    url: "https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}/api/orgs/1/users/{{ item.json.id }}"
+    method: PATCH
+    headers:
+      Authorization: "Basic {{ ('admin:' + vault_grafana_admin_password) | b64encode }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      role: "Admin"
+    status_code: [200, 404]  # 404 if user doesn't exist
+    validate_certs: false
+  loop: "{{ user_lookup.results | default([]) }}"
+  when: 
+    - user_lookup.results is defined
+    - item.json is defined
+    - item.json.id is defined
+
 - name: Display deployment status
   debug:
-    msg: "Observability stack deployed successfully. Access Grafana at http://{{ ansible_host }}:3000"
+    msg: "Observability stack deployed successfully. Access Grafana at https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}. Additional users and teams will be configured via Grafana API."

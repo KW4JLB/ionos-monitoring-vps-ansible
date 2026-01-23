@@ -40,7 +40,7 @@ services:
     restart: unless-stopped
 
   prometheus:
-    image: prom/prometheus:v2.45.0
+    image: prom/prometheus:v2.48.1
     container_name: prometheus
     networks:
       - monitoring
@@ -53,12 +53,13 @@ services:
       - '--storage.tsdb.retention.time=15d'
       - '--web.console.libraries=/usr/share/prometheus/console_libraries'
       - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-remote-write-receiver'
     ports:
       - "9090:9090"
     restart: unless-stopped
 
   loki:
-    image: grafana/loki:2.9.0
+    image: grafana/loki:2.9.4
     container_name: loki
     networks:
       - monitoring
@@ -74,13 +75,18 @@ services:
     restart: unless-stopped
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:10.2.3
     container_name: grafana
     networks:
       - monitoring
     environment:
       - GF_SECURITY_ADMIN_PASSWORD={{ vault_grafana_admin_password }}
       - GF_PATHS_PROVISIONING=/etc/grafana/provisioning
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_DISABLE_LOGIN_FORM=false
+      - GF_USERS_AUTO_ASSIGN_ORG=true
+      - GF_USERS_AUTO_ASSIGN_ORG_ID=1
+      - GF_USERS_AUTO_ASSIGN_ORG_ROLE=Viewer
       - VIRTUAL_HOST={{ grafana_domain | default('monitoring.kw4jlb.com') }}
       - LETSENCRYPT_HOST={{ grafana_domain | default('monitoring.kw4jlb.com') }}
       - LETSENCRYPT_EMAIL={{ letsencrypt_email | default('admin@example.com') }}
