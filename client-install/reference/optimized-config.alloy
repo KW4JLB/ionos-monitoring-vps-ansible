@@ -1,0 +1,89 @@
+// Optimized Alloy Configuration for Raspberry Pi 3B+
+// Reduced disk I/O, longer intervals, simplified collection
+// For reference: https://grafana.com/docs/alloy
+
+logging {
+  level  = "warn"  // Reduced logging to minimize disk writes
+  format = "logfmt"
+}
+
+// ============================================================================
+// Prometheus Remote Write Endpoint (OPTIMIZED)
+// ============================================================================
+prometheus.remote_write "monitoring_server" {
+  endpoint {
+    url = "http://monitoring.kw4jlb.com:9090/api/v1/write"
+    
+    queue_config {
+      max_shards = 1
+      max_samples_per_send = 100  // Smaller batches
+      batch_send_deadline = "10s"  // Send more frequently but smaller batches
+    }
+    
+    // Reduce memory usage
+    remote_timeout = "15s"
+  }
+  
+  // Configure WAL for low disk I/O
+  wal {
+    truncate_frequency = "2h"    // Less frequent WAL truncation
+    min_keepalive_time = "1m"    // Shorter keepalive
+    max_keepalive_time = "10m"   // Shorter max keepalive
+  }
+  
+  external_labels = {
+    monitor     = "ionos-monitoring",
+    environment = "production",
+    instance    = "node592420",
+    service     = "asterisk",
+  }
+}
+
+// ============================================================================
+// Enhanced Allstar Linux Metrics Scraping (REDUCED FREQUENCY)
+// ============================================================================
+discovery.relabel "allstar_enhanced_metrics" {
+  targets = [{
+    __address__ = "localhost:8089",
+  }]
+
+  rule {
+    target_label = "instance"
+    replacement  = "node592420"
+  }
+  
+  rule {
+    target_label = "job"
+    replacement  = "allstar-enhanced"
+  }
+}
+
+prometheus.scrape "allstar_enhanced_metrics" {
+  targets         = discovery.relabel.allstar_enhanced_metrics.output
+  forward_to      = [prometheus.remote_write.monitoring_server.receiver]
+  job_name        = "integrations/allstar-enhanced"
+  scrape_interval = "2m"      // Reduced from 30s to 2m
+  scrape_timeout  = "30s"     // Increased timeout for reliability
+  metrics_path    = "/metrics"
+}
+
+// ============================================================================
+// Basic System Metrics (MINIMAL)
+// ============================================================================
+prometheus.exporter.unix "system" {
+  include_exporter_metrics = false  // Reduce metrics volume
+  disable_collectors = [
+    "mdadm", "wifi", "powersupplyclass", "dmi", 
+    "thermal_zone", "cooling_device", "processes", "interrupts"
+  ]
+  
+  // Only essential collectors
+  enable_collectors = ["systemd"]
+}
+
+prometheus.scrape "system_metrics" {
+  targets         = prometheus.exporter.unix.system.targets
+  forward_to      = [prometheus.remote_write.monitoring_server.receiver]
+  job_name        = "node-exporter"
+  scrape_interval = "1m"     // Reduced from 15s to 1m
+}

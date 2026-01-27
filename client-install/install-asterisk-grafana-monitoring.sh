@@ -38,6 +38,11 @@ MONITOR_NAME="ionos-monitoring"
 ASTERISK_HTTP_PORT="8088"
 ASTERISK_METRICS_PATH="/metrics"
 
+# Enhanced monitoring configuration
+ENHANCED_MONITORING="yes"  # Set to "no" to disable enhanced monitoring
+ENHANCED_METRICS_PORT="8089"
+CLIENT_INSTALL_DIR="$(dirname "$(readlink -f "$0")")"  # Directory where this script is located
+
 ################################################################################
 # Helper Functions
 ################################################################################
@@ -59,6 +64,54 @@ check_root() {
         log_error "This script must be run as root (use sudo)"
         exit 1
     fi
+}
+
+################################################################################
+# Enhanced Monitoring Functions
+################################################################################
+
+install_enhanced_monitoring() {
+    if [ "$ENHANCED_MONITORING" != "yes" ]; then
+        log_info "Skipping enhanced monitoring installation"
+        return 0
+    fi
+
+    log_info "Installing enhanced Allstar monitoring components..."
+
+    # Create directory for enhanced monitoring
+    local ENHANCED_DIR="/opt/allstar-monitoring"
+    mkdir -p "$ENHANCED_DIR"
+
+    # Copy Python collectors
+    cp "$CLIENT_INSTALL_DIR/rpt_metrics.py" "$ENHANCED_DIR/" 2>/dev/null || log_warn "rpt_metrics.py not found, skipping"
+    cp "$CLIENT_INSTALL_DIR/iax2_metrics.py" "$ENHANCED_DIR/" 2>/dev/null || log_warn "iax2_metrics.py not found, skipping" 
+    cp "$CLIENT_INSTALL_DIR/allmon3_metrics.py" "$ENHANCED_DIR/" 2>/dev/null || log_warn "allmon3_metrics.py not found, skipping"
+    cp "$CLIENT_INSTALL_DIR/log_metrics.py" "$ENHANCED_DIR/" 2>/dev/null || log_warn "log_metrics.py not found, skipping"
+    cp "$CLIENT_INSTALL_DIR/metrics_server.py" "$ENHANCED_DIR/" 2>/dev/null || log_warn "metrics_server.py not found, skipping"
+
+    # Make scripts executable
+    chmod +x "$ENHANCED_DIR"/*.py 2>/dev/null
+
+    # Install systemd service if it exists
+    if [ -f "$CLIENT_INSTALL_DIR/allstar-metrics.service" ]; then
+        # Update service file paths
+        sed "s|/home/kj4kpy/allstar-monitoring|$ENHANCED_DIR|g" \
+            "$CLIENT_INSTALL_DIR/allstar-metrics.service" > /etc/systemd/system/allstar-metrics.service
+        
+        systemctl daemon-reload
+        systemctl enable allstar-metrics.service
+        systemctl start allstar-metrics.service
+        
+        if systemctl is-active --quiet allstar-metrics; then
+            log_info "✓ Enhanced monitoring service started"
+        else
+            log_warn "Enhanced monitoring service failed to start"
+        fi
+    else
+        log_warn "allstar-metrics.service not found, skipping service installation"
+    fi
+
+    log_info "✓ Enhanced monitoring components installed"
 }
 
 ################################################################################
@@ -268,8 +321,19 @@ configure_grafana_alloy() {
         cp "$ALLOY_CONFIG" "${ALLOY_CONFIG}.backup.$(date +%Y%m%d_%H%M%S)"
     fi
 
-    # Create Alloy configuration
-    cat > "$ALLOY_CONFIG" <<EOF
+    # Use enhanced config if available and enabled
+    if [ "$ENHANCED_MONITORING" = "yes" ] && [ -f "$CLIENT_INSTALL_DIR/enhanced-config.alloy" ]; then
+        log_info "Using enhanced Alloy configuration"
+        # Replace variables in enhanced config
+        sed -e "s/monitoring\.kw4jlb\.com/$MONITORING_SERVER/g" \
+            -e "s/node592420/$INSTANCE_NAME/g" \
+            -e "s/ionos-monitoring/$MONITOR_NAME/g" \
+            -e "s/production/$ENVIRONMENT/g" \
+            "$CLIENT_INSTALL_DIR/enhanced-config.alloy" > "$ALLOY_CONFIG"
+    else
+        log_info "Using basic Alloy configuration"
+        # Create basic Alloy configuration
+        cat > "$ALLOY_CONFIG" <<EOF
 // Grafana Alloy Configuration for Asterisk Monitoring
 // Scrapes metrics locally and pushes to monitoring server
 // For reference: https://grafana.com/docs/alloy
@@ -389,6 +453,7 @@ prometheus.scrape "alloy_self" {
   scrape_interval = "15s"
 }
 EOF
+    fi
 
     # Set proper permissions
     chown alloy:alloy "$ALLOY_CONFIG"
@@ -473,6 +538,21 @@ verify_installation() {
         echo -e "${GREEN}✓${NC} Alloy configuration: VALID"
     else
         echo -e "${YELLOW}⚠${NC} Alloy configuration: CHECK SYNTAX"
+    fi
+
+    # Check enhanced monitoring if enabled
+    if [ "$ENHANCED_MONITORING" = "yes" ]; then
+        if systemctl is-active --quiet allstar-metrics 2>/dev/null; then
+            echo -e "${GREEN}✓${NC} Enhanced monitoring service: RUNNING"
+        else
+            echo -e "${RED}✗${NC} Enhanced monitoring service: NOT RUNNING"
+        fi
+        
+        if curl -s -f "http://localhost:$ENHANCED_METRICS_PORT/health" > /dev/null 2>&1; then
+            echo -e "${GREEN}✓${NC} Enhanced metrics endpoint: ACCESSIBLE"
+        else
+            echo -e "${RED}✗${NC} Enhanced metrics endpoint: NOT ACCESSIBLE"
+        fi
     fi
 
     echo ""
@@ -563,6 +643,7 @@ main() {
     configure_asterisk_logging
     restart_asterisk
     install_grafana_alloy
+    install_enhanced_monitoring
     configure_grafana_alloy
     start_grafana_alloy
 

@@ -1,0 +1,212 @@
+// Grafana Alloy Configuration for Enhanced Asterisk Monitoring
+// Scrapes metrics locally and pushes to monitoring.kw4jlb.com
+// Enhanced with Allstar-specific metrics collection
+// For reference: https://grafana.com/docs/alloy
+
+logging {
+  level  = "info"
+  format = "logfmt"
+}
+
+// ============================================================================
+// Prometheus Remote Write Endpoint
+// ============================================================================
+prometheus.remote_write "monitoring_server" {
+  endpoint {
+    url = "http://monitoring.kw4jlb.com:9090/api/v1/write"
+    
+    queue_config {
+      max_shards = 1
+    }
+  }
+  
+  external_labels = {
+    monitor     = "ionos-monitoring",
+    environment = "production",
+    instance    = "node592420",
+    service     = "asterisk",
+  }
+}
+
+// ============================================================================
+// Loki Remote Write Endpoint
+// ============================================================================
+loki.write "monitoring_server" {
+  endpoint {
+    url = "http://monitoring.kw4jlb.com:3100/loki/api/v1/push"
+  }
+  
+  external_labels = {
+    monitor     = "ionos-monitoring",
+    environment = "production",
+    instance    = "node592420",
+    service     = "asterisk",
+  }
+}
+
+// ============================================================================
+// Asterisk Prometheus Metrics Scraping (Original)
+// ============================================================================
+discovery.relabel "asterisk_metrics" {
+  targets = [{
+    __address__ = "localhost:8088",
+  }]
+
+  rule {
+    target_label = "instance"
+    replacement  = "node592420"
+  }
+  
+  rule {
+    target_label = "job"
+    replacement  = "asterisk"
+  }
+}
+
+prometheus.scrape "asterisk_metrics" {
+  targets         = discovery.relabel.asterisk_metrics.output
+  forward_to      = [prometheus.remote_write.monitoring_server.receiver]
+  job_name        = "integrations/asterisk"
+  scrape_interval = "15s"
+  scrape_timeout  = "10s"
+  metrics_path    = "/metrics"
+}
+
+// ============================================================================
+// Enhanced Allstar Linux Metrics Scraping (NEW)
+// ============================================================================
+discovery.relabel "allstar_enhanced_metrics" {
+  targets = [{
+    __address__ = "localhost:8089",
+  }]
+
+  rule {
+    target_label = "instance"
+    replacement  = "node592420"
+  }
+  
+  rule {
+    target_label = "job"
+    replacement  = "allstar-enhanced"
+  }
+}
+
+prometheus.scrape "allstar_enhanced_metrics" {
+  targets         = discovery.relabel.allstar_enhanced_metrics.output
+  forward_to      = [prometheus.remote_write.monitoring_server.receiver]
+  job_name        = "integrations/allstar-enhanced"
+  scrape_interval = "30s"
+  scrape_timeout  = "25s"
+  metrics_path    = "/metrics"
+}
+
+// ============================================================================
+// Asterisk Logs Collection (Enhanced)
+// ============================================================================
+local.file_match "asterisk_logs" {
+  path_targets = [
+    {
+      __address__ = "localhost",
+      __path__    = "/var/log/asterisk/full",
+      instance    = "node592420",
+      job         = "asterisk-logs",
+      log_type    = "full",
+    },
+    {
+      __address__ = "localhost",
+      __path__    = "/var/log/asterisk/messages",
+      instance    = "node592420", 
+      job         = "asterisk-logs",
+      log_type    = "messages",
+    },
+  ]
+}
+
+loki.source.file "asterisk_logs" {
+  targets    = local.file_match.asterisk_logs.targets
+  forward_to = [loki.process.asterisk_logs.receiver]
+}
+
+// Enhanced log processing with parsing
+loki.process "asterisk_logs" {
+  forward_to = [loki.write.monitoring_server.receiver]
+
+  stage.regex {
+    expression = `^\[(?P<timestamp>[^\]]+)\] (?P<level>\w+).*?(?P<component>[^:]+): (?P<message>.*)`
+  }
+
+  stage.labels {
+    values = {
+      level     = "level",
+      component = "component", 
+    }
+  }
+
+  stage.timestamp {
+    source = "timestamp"
+    format = "2006-01-02 15:04:05.000"
+  }
+}
+
+// ============================================================================
+// System Metrics (Node Exporter)
+// ============================================================================
+prometheus.exporter.unix "system" {
+  include_exporter_metrics = true
+  disable_collectors       = ["mdadm"]
+  
+  // Enable additional collectors useful for Allstar monitoring
+  enable_collectors = ["systemd", "processes", "interrupts"]
+}
+
+prometheus.scrape "system_metrics" {
+  targets         = prometheus.exporter.unix.system.targets
+  forward_to      = [prometheus.remote_write.monitoring_server.receiver]
+  job_name        = "node-exporter"
+  scrape_interval = "15s"
+}
+
+// ============================================================================
+// Alloy Self-Monitoring
+// ============================================================================
+prometheus.scrape "alloy_self" {
+  targets = [{
+    job         = "alloy",
+    __address__ = "127.0.0.1:12345",
+  }]
+  
+  forward_to      = [prometheus.remote_write.monitoring_server.receiver]
+  scrape_interval = "15s"
+}
+
+// ============================================================================
+// Service Health Monitoring
+// ============================================================================
+discovery.relabel "service_health" {
+  targets = [
+    {
+      __address__ = "localhost:8089",
+      __metrics_path__ = "/health",
+      service = "allstar-metrics",
+    },
+  ]
+
+  rule {
+    target_label = "instance"
+    replacement  = "node592420"
+  }
+  
+  rule {
+    target_label = "job"
+    replacement  = "service-health"
+  }
+}
+
+prometheus.scrape "service_health" {
+  targets         = discovery.relabel.service_health.output
+  forward_to      = [prometheus.remote_write.monitoring_server.receiver]
+  job_name        = "integrations/service-health"
+  scrape_interval = "60s"
+  scrape_timeout  = "10s"
+  metrics_path    = "/health"
+}
