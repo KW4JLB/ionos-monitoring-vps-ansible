@@ -1,0 +1,19 @@
+[Unit]
+Description=Allstar Linux Metrics Server
+After=network.target asterisk.service allmon3.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=/usr/bin/python3 /home/kj4kpy/ionos-monitoring-vps-ansible/client-install/metrics_server.py
+Restart=always
+RestartSec=10
+Environment=PYTHONPATH=/home/kj4kpy/allstar-monitoring
+Environment=PYTHONUNBUFFERED=1
+
+# Security
+NoNewPrivileges=false
+
+[Install]
+WantedBy=multi-user.target

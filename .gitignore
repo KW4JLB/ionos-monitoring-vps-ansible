@@ -45,3 +45,5 @@ id_rsa*
 # Backup Files
 *.bak
 *.backup
+
+credentials.txt
