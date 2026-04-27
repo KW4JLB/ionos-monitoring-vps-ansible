@@ -101,8 +101,8 @@
     status_code: 200
     timeout: 30
     validate_certs: false
-  retries: 10
-  delay: 5
+  retries: 20
+  delay: 15
 
 # --- Organization Management ---
 
