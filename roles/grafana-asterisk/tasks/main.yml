@@ -89,7 +89,7 @@
     body:
       uid: "asterisk-folder-org{{ item.id }}"
       title: "Asterisk Monitoring"
-    status_code: [200, 409]  # 409 = folder already exists
+    status_code: [200, 409, 412]  # 409/412 = folder already exists
     validate_certs: false
   loop: "{{ grafana_orgs | default([{'name': 'Main Org', 'id': 1}]) }}"
 
