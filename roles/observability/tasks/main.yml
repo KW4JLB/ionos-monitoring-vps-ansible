@@ -39,6 +39,12 @@
     - /opt/monitoring/grafana/provisioning
     - /opt/monitoring/grafana/provisioning/datasources
 
+- name: Create Uptime Kuma data directory
+  file:
+    path: /opt/monitoring/uptime-kuma
+    state: directory
+    mode: '0755'
+
 - name: Deploy Grafana datasource provisioning
   template:
     src: grafana/datasources.yml.j2
