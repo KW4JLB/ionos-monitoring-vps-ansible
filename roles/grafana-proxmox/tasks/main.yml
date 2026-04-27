@@ -1,0 +1,105 @@
+---
+- name: Create Grafana provisioning dashboards directory
+  file:
+    path: /opt/monitoring/grafana/provisioning/dashboards
+    state: directory
+    owner: 472
+    group: 472
+    mode: '0755'
+
+- name: Create Proxmox dashboards directory
+  file:
+    path: /opt/monitoring/grafana/dashboards/proxmox
+    state: directory
+    owner: 472
+    group: 472
+    mode: '0755'
+
+- name: Deploy dashboard provisioning configuration
+  template:
+    src: dashboards.yml.j2
+    dest: /opt/monitoring/grafana/provisioning/dashboards/proxmox.yml
+    owner: 472
+    group: 472
+    mode: '0644'
+
+- name: Remove existing dashboard file to force refresh
+  file:
+    path: /opt/monitoring/grafana/dashboards/proxmox/proxmox-overview.json
+    state: absent
+
+- name: Copy Proxmox Overview dashboard
+  copy:
+    src: dashboards/proxmox-overview.json
+    dest: /opt/monitoring/grafana/dashboards/proxmox/proxmox-overview.json
+    owner: 472
+    group: 472
+    mode: '0644'
+    force: yes
+
+- name: Update dashboard file timestamp to force reload
+  shell: touch /opt/monitoring/grafana/dashboards/proxmox/proxmox-overview.json
+  become: yes
+
+- name: Wait for Grafana API to be ready
+  uri:
+    url: "https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}/api/health"
+    method: GET
+    status_code: 200
+    timeout: 30
+    validate_certs: false
+  retries: 10
+  delay: 5
+
+- name: Create Proxmox Monitoring folder in org {{ grafana_proxmox_org_id | default(2) }}
+  uri:
+    url: "https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}/api/folders"
+    method: POST
+    headers:
+      Authorization: "Basic {{ ('admin:' + vault_grafana_admin_password) | b64encode }}"
+      Content-Type: "application/json"
+      X-Grafana-Org-Id: "{{ grafana_proxmox_org_id | default(2) }}"
+    body_format: json
+    body:
+      uid: "proxmox-folder-org{{ grafana_proxmox_org_id | default(2) }}"
+      title: "Proxmox Monitoring"
+    status_code: [200, 409, 412]
+    validate_certs: false
+
+- name: Restart Grafana service to load new dashboards
+  community.docker.docker_compose_v2:
+    project_src: /opt/monitoring
+    services:
+      - grafana
+    state: present
+    recreate: always
+    pull: never
+
+- name: Wait for Grafana to be ready after restart
+  uri:
+    url: "https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}/api/health"
+    method: GET
+    status_code: 200
+    timeout: 30
+    validate_certs: false
+  retries: 20
+  delay: 15
+
+- name: Trigger dashboard reload via API
+  uri:
+    url: "https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}/api/admin/provisioning/dashboards/reload"
+    method: POST
+    headers:
+      Authorization: "Basic {{ ('admin:' + vault_grafana_admin_password) | b64encode }}"
+    status_code: [200, 204]
+    validate_certs: false
+  ignore_errors: yes
+
+- name: Display Proxmox dashboard deployment status
+  debug:
+    msg:
+      - "Proxmox VE dashboard deployed successfully!"
+      - "Org ID: {{ grafana_proxmox_org_id | default(2) }}"
+      - "Dashboard: Proxmox VE Overview"
+      - "Panels: Cluster status, node health, VM/LXC table, storage, network I/O, disk I/O, backup status"
+      - "Access: https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}/dashboards/f/proxmox-folder-org{{ grafana_proxmox_org_id | default(2) }}/"
