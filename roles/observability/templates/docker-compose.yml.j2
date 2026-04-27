@@ -86,7 +86,8 @@ services:
       - GF_AUTH_DISABLE_LOGIN_FORM=false
       - GF_USERS_AUTO_ASSIGN_ORG=true
       - GF_USERS_AUTO_ASSIGN_ORG_ID=1
-      - GF_USERS_AUTO_ASSIGN_ORG_ROLE=Viewer
+      - GF_USERS_AUTO_ASSIGN_ORG_ROLE={{ grafana_default_org_role | default('Viewer') }}
+      - GF_ORGS_AUTO_ASSIGN_ORG_ID=1
       - VIRTUAL_HOST={{ grafana_domain | default('monitoring.kw4jlb.com') }}
       - LETSENCRYPT_HOST={{ grafana_domain | default('monitoring.kw4jlb.com') }}
       - LETSENCRYPT_EMAIL={{ letsencrypt_email | default('admin@example.com') }}
