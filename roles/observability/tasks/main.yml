@@ -106,6 +106,20 @@
 
 # --- Organization Management ---
 
+- name: Rename default Grafana organization (org 1)
+  uri:
+    url: "https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}/api/orgs/1"
+    method: PUT
+    headers:
+      Authorization: "Basic {{ ('admin:' + vault_grafana_admin_password) | b64encode }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "{{ (grafana_orgs | selectattr('id', 'equalto', 1) | first).name }}"
+    status_code: [200]
+    validate_certs: false
+  when: grafana_orgs is defined
+
 - name: Create additional Grafana organizations
   uri:
     url: "https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}/api/orgs"
@@ -121,16 +135,48 @@
   loop: "{{ grafana_orgs | default([]) | selectattr('id', 'ne', 1) | list }}"
   when: grafana_orgs is defined
 
-- name: Reload Grafana datasource provisioning after org creation
+- name: Create Prometheus datasource for additional orgs
   uri:
-    url: "https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}/api/admin/provisioning/datasources/reload"
+    url: "https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}/api/datasources"
     method: POST
     headers:
       Authorization: "Basic {{ ('admin:' + vault_grafana_admin_password) | b64encode }}"
-    status_code: [200, 204]
+      Content-Type: "application/json"
+      X-Grafana-Org-Id: "{{ item.id }}"
+    body_format: json
+    body:
+      name: "Prometheus"
+      type: "prometheus"
+      access: "proxy"
+      url: "http://prometheus:9090"
+      isDefault: true
+      jsonData:
+        timeInterval: "15s"
+    status_code: [200, 409]
     validate_certs: false
-  ignore_errors: yes
-  when: grafana_orgs is defined and (grafana_orgs | length > 1)
+  loop: "{{ grafana_orgs | default([]) | selectattr('id', 'ne', 1) | list }}"
+  when: grafana_orgs is defined
+
+- name: Create Loki datasource for additional orgs
+  uri:
+    url: "https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}/api/datasources"
+    method: POST
+    headers:
+      Authorization: "Basic {{ ('admin:' + vault_grafana_admin_password) | b64encode }}"
+      Content-Type: "application/json"
+      X-Grafana-Org-Id: "{{ item.id }}"
+    body_format: json
+    body:
+      name: "Loki"
+      type: "loki"
+      access: "proxy"
+      url: "http://loki:3100"
+      jsonData:
+        maxLines: 1000
+    status_code: [200, 409]
+    validate_certs: false
+  loop: "{{ grafana_orgs | default([]) | selectattr('id', 'ne', 1) | list }}"
+  when: grafana_orgs is defined
 
 # --- User Management ---
 
