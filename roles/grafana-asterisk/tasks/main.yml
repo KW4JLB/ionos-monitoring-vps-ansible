@@ -20,19 +20,8 @@
     mode: '0755'
 
 - name: Deploy dashboard provisioning configuration
-  copy:
-    content: |
-      apiVersion: 1
-      providers:
-        - name: 'asterisk-dashboards'
-          orgId: 1
-          folder: 'Asterisk Monitoring'
-          type: file
-          disableDeletion: false
-          updateIntervalSeconds: 5
-          allowUiUpdates: true
-          options:
-            path: /var/lib/grafana/dashboards/asterisk
+  template:
+    src: dashboards.yml.j2
     dest: /opt/monitoring/grafana/provisioning/dashboards/asterisk.yml
     owner: 472
     group: 472
@@ -88,31 +77,21 @@
   retries: 10
   delay: 5
 
-- name: Check if Asterisk Monitoring folder exists
-  uri:
-    url: "https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}/api/folders/asterisk-folder"
-    method: GET
-    headers:
-      Authorization: "Basic {{ ('admin:' + vault_grafana_admin_password) | b64encode }}"
-    status_code: [200, 404]
-    validate_certs: false
-  register: folder_check
-
-- name: Create Asterisk Monitoring folder in Grafana
+- name: Create Asterisk Monitoring folder in each organization
   uri:
     url: "https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}/api/folders"
     method: POST
     headers:
       Authorization: "Basic {{ ('admin:' + vault_grafana_admin_password) | b64encode }}"
       Content-Type: "application/json"
+      X-Grafana-Org-Id: "{{ item.id }}"
     body_format: json
     body:
-      uid: "asterisk-folder"
+      uid: "asterisk-folder-org{{ item.id }}"
       title: "Asterisk Monitoring"
-    status_code: [200, 409]  # 409 = folder already exists
+    status_code: [200, 409, 412]  # 409/412 = folder already exists
     validate_certs: false
-  register: asterisk_folder
-  when: folder_check.status == 404
+  loop: "{{ grafana_orgs | default([{'name': 'Main Org', 'id': 1}]) }}"
 
 - name: Restart Grafana service to load new dashboards
   community.docker.docker_compose_v2:

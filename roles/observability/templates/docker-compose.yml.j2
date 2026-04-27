@@ -81,12 +81,22 @@ services:
       - monitoring
     environment:
       - GF_SECURITY_ADMIN_PASSWORD={{ vault_grafana_admin_password }}
+      - GF_SERVER_ROOT_URL=https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}
       - GF_PATHS_PROVISIONING=/etc/grafana/provisioning
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_AUTH_DISABLE_LOGIN_FORM=false
       - GF_USERS_AUTO_ASSIGN_ORG=true
       - GF_USERS_AUTO_ASSIGN_ORG_ID=1
-      - GF_USERS_AUTO_ASSIGN_ORG_ROLE=Viewer
+      - GF_USERS_AUTO_ASSIGN_ORG_ROLE={{ grafana_default_org_role | default('Viewer') }}
+      - GF_ORGS_AUTO_ASSIGN_ORG_ID=1
+      - GF_SMTP_ENABLED=true
+      - GF_SMTP_HOST=smtp.gmail.com:587
+      - GF_SMTP_USER={{ vault_smtp_user }}
+      - GF_SMTP_PASSWORD={{ vault_smtp_password }}
+      - GF_SMTP_FROM_ADDRESS={{ vault_smtp_user }}
+      - GF_SMTP_FROM_NAME={{ grafana_smtp_from_name | default('Grafana Alerts') }}
+      - GF_SMTP_STARTTLS_POLICY=MandatoryStartTLS
+      - GF_SMTP_SKIP_VERIFY=false
       - VIRTUAL_HOST={{ grafana_domain | default('monitoring.kw4jlb.com') }}
       - LETSENCRYPT_HOST={{ grafana_domain | default('monitoring.kw4jlb.com') }}
       - LETSENCRYPT_EMAIL={{ letsencrypt_email | default('admin@example.com') }}

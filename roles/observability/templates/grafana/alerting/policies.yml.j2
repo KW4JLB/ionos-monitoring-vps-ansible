@@ -1,0 +1,28 @@
+apiVersion: 1
+
+# Alert routing policies — one policy tree per org.
+# Alerts are routed to a team's contact point when the alert carries a
+# matching `team` label (e.g. team="ops").  Unmatched alerts fall through
+# to the org-wide catch-all receiver.
+policies:
+{% for org in grafana_orgs | default([]) %}
+{% if org.teams is defined %}
+{% set catch_all = org.name | lower | replace(' ', '-') + '-all-email' %}
+
+  - orgId: {{ org.id }}
+    receiver: "{{ catch_all }}"
+    group_by:
+      - grafana_folder
+      - alertname
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 4h
+    routes:
+{% for team in org.teams %}
+      - receiver: "{{ org.name | lower | replace(' ', '-') }}-{{ team.name | lower | replace(' ', '-') }}-email"
+        matchers:
+          - team = "{{ team.name | lower | replace(' ', '-') }}"
+        continue: false
+{% endfor %}
+{% endif %}
+{% endfor %}

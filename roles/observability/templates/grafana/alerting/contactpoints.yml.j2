@@ -1,0 +1,46 @@
+apiVersion: 1
+
+contactPoints:
+{% for org in grafana_orgs | default([]) %}
+{% if org.teams is defined %}
+{# Collect all member emails across every team for the org-wide catch-all #}
+{% set all_emails = [] %}
+{% for team in org.teams %}
+{% for login in team.members | default([]) %}
+{% set user = grafana_users | default([]) | selectattr('login', 'equalto', login) | first | default(none) %}
+{% if user and user.email not in all_emails %}{% set _ = all_emails.append(user.email) %}{% endif %}
+{% endfor %}
+{% endfor %}
+{% if all_emails %}
+
+  # Catch-all for org {{ org.id }} — receives alerts not matched by a team route
+  - orgId: {{ org.id }}
+    name: "{{ org.name | lower | replace(' ', '-') }}-all-email"
+    receivers:
+      - uid: "{{ (org.id | string + '-all') | hash('md5') }}"
+        type: email
+        settings:
+          addresses: "{{ all_emails | join(';') }}"
+        disableResolveMessage: false
+{% endif %}
+{% for team in org.teams %}
+{% set member_emails = [] %}
+{% for login in team.members | default([]) %}
+{% set user = grafana_users | default([]) | selectattr('login', 'equalto', login) | first | default(none) %}
+{% if user %}{% set _ = member_emails.append(user.email) %}{% endif %}
+{% endfor %}
+{% if member_emails %}
+
+  # Team "{{ team.name }}" contact point for org {{ org.id }}
+  - orgId: {{ org.id }}
+    name: "{{ org.name | lower | replace(' ', '-') }}-{{ team.name | lower | replace(' ', '-') }}-email"
+    receivers:
+      - uid: "{{ (org.id | string + team.name) | hash('md5') }}"
+        type: email
+        settings:
+          addresses: "{{ member_emails | join(';') }}"
+        disableResolveMessage: false
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endfor %}

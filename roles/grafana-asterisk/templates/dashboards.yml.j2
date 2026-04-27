@@ -1,0 +1,13 @@
+apiVersion: 1
+providers:
+{% for org in grafana_orgs | default([{'name': 'Main Org', 'id': 1}]) %}
+  - name: 'asterisk-dashboards-org{{ org.id }}'
+    orgId: {{ org.id }}
+    folder: 'Asterisk Monitoring'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 5
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards/asterisk
+{% endfor %}

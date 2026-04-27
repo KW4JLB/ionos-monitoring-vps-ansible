@@ -39,6 +39,7 @@
     - /opt/monitoring/grafana/provisioning
     - /opt/monitoring/grafana/provisioning/datasources
 
+
 - name: Deploy Grafana datasource provisioning
   template:
     src: grafana/datasources.yml.j2
@@ -95,8 +96,84 @@
     status_code: 200
     timeout: 30
     validate_certs: false
-  retries: 10
-  delay: 5
+  retries: 20
+  delay: 15
+
+# --- Organization Management ---
+
+- name: Rename default Grafana organization (org 1)
+  uri:
+    url: "https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}/api/orgs/1"
+    method: PUT
+    headers:
+      Authorization: "Basic {{ ('admin:' + vault_grafana_admin_password) | b64encode }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "{{ (grafana_orgs | selectattr('id', 'equalto', 1) | first).name }}"
+    status_code: [200]
+    validate_certs: false
+  when: grafana_orgs is defined
+
+- name: Create additional Grafana organizations
+  uri:
+    url: "https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}/api/orgs"
+    method: POST
+    headers:
+      Authorization: "Basic {{ ('admin:' + vault_grafana_admin_password) | b64encode }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "{{ item.name }}"
+    status_code: [200, 409]  # 409 = org already exists
+    validate_certs: false
+  loop: "{{ grafana_orgs | default([]) | selectattr('id', 'ne', 1) | list }}"
+  when: grafana_orgs is defined
+
+- name: Create Prometheus datasource for additional orgs
+  uri:
+    url: "https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}/api/datasources"
+    method: POST
+    headers:
+      Authorization: "Basic {{ ('admin:' + vault_grafana_admin_password) | b64encode }}"
+      Content-Type: "application/json"
+      X-Grafana-Org-Id: "{{ item.id }}"
+    body_format: json
+    body:
+      name: "Prometheus"
+      type: "prometheus"
+      access: "proxy"
+      url: "http://prometheus:9090"
+      isDefault: true
+      jsonData:
+        timeInterval: "15s"
+    status_code: [200, 409]
+    validate_certs: false
+  loop: "{{ grafana_orgs | default([]) | selectattr('id', 'ne', 1) | list }}"
+  when: grafana_orgs is defined
+
+- name: Create Loki datasource for additional orgs
+  uri:
+    url: "https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}/api/datasources"
+    method: POST
+    headers:
+      Authorization: "Basic {{ ('admin:' + vault_grafana_admin_password) | b64encode }}"
+      Content-Type: "application/json"
+      X-Grafana-Org-Id: "{{ item.id }}"
+    body_format: json
+    body:
+      name: "Loki"
+      type: "loki"
+      access: "proxy"
+      url: "http://loki:3100"
+      jsonData:
+        maxLines: 1000
+    status_code: [200, 409]
+    validate_certs: false
+  loop: "{{ grafana_orgs | default([]) | selectattr('id', 'ne', 1) | list }}"
+  when: grafana_orgs is defined
+
+# --- User Management ---
 
 - name: Create Grafana users via API
   uri:
@@ -115,9 +192,8 @@
     validate_certs: false
   loop: "{{ grafana_users | default([]) }}"
   when: grafana_users is defined
-  register: created_users
 
-- name: Get user ID for admin permission setting
+- name: Look up Grafana user IDs
   uri:
     url: "https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}/api/users/lookup?loginOrEmail={{ item.login }}"
     method: GET
@@ -126,12 +202,21 @@
     status_code: [200, 404]
     validate_certs: false
   loop: "{{ grafana_users | default([]) }}"
-  when: grafana_users is defined and (item.is_admin | default(false))
-  register: user_lookup
+  when: grafana_users is defined
+  register: all_user_lookup
 
-- name: Set user as admin via API  
+- name: Build user login-to-ID map
+  set_fact:
+    grafana_user_id_map: "{{ grafana_user_id_map | default({}) | combine({item.item.login: item.json.id}) }}"
+  loop: "{{ all_user_lookup.results | default([]) }}"
+  when:
+    - all_user_lookup.results is defined
+    - item.json is defined
+    - item.json.id is defined
+
+- name: Grant Grafana server admin permissions
   uri:
-    url: "https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}/api/admin/users/{{ item.json.id }}/permissions"
+    url: "https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}/api/admin/users/{{ grafana_user_id_map[item.login] }}/permissions"
     method: PUT
     headers:
       Authorization: "Basic {{ ('admin:' + vault_grafana_admin_password) | b64encode }}"
@@ -139,32 +224,109 @@
     body_format: json
     body:
       isGrafanaAdmin: true
-    status_code: [200, 404]  # 404 if user doesn't exist
+    status_code: [200, 404]
     validate_certs: false
-  loop: "{{ user_lookup.results | default([]) }}"
-  when: 
-    - user_lookup.results is defined
-    - item.json is defined
-    - item.json.id is defined
+  loop: "{{ grafana_users | default([]) }}"
+  when:
+    - grafana_users is defined
+    - grafana_user_id_map is defined
+    - item.is_admin | default(false)
+    - item.login in grafana_user_id_map
 
-- name: Set organization role to Admin for admin users
+# --- Per-Org Membership Management ---
+
+- name: Add users to their organization memberships
   uri:
-    url: "https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}/api/orgs/1/users/{{ item.json.id }}"
+    url: "https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}/api/orgs/{{ item.1.org_id }}/users"
+    method: POST
+    headers:
+      Authorization: "Basic {{ ('admin:' + vault_grafana_admin_password) | b64encode }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      loginOrEmail: "{{ item.0.login }}"
+      role: "{{ item.1.role }}"
+    status_code: [200, 409]  # 409 = user already in org
+    validate_certs: false
+  with_subelements:
+    - "{{ grafana_users | default([]) }}"
+    - org_memberships
+    - skip_missing: true
+  when: grafana_users is defined
+
+- name: Update user role in Main Org for members with explicit org 1 membership
+  uri:
+    url: "https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}/api/orgs/1/users/{{ grafana_user_id_map[item.login] }}"
     method: PATCH
     headers:
       Authorization: "Basic {{ ('admin:' + vault_grafana_admin_password) | b64encode }}"
       Content-Type: "application/json"
     body_format: json
     body:
-      role: "Admin"
-    status_code: [200, 404]  # 404 if user doesn't exist
+      role: "{{ (item.org_memberships | selectattr('org_id', 'equalto', 1) | first).role }}"
+    status_code: [200, 404]
     validate_certs: false
-  loop: "{{ user_lookup.results | default([]) }}"
-  when: 
-    - user_lookup.results is defined
-    - item.json is defined
-    - item.json.id is defined
+  loop: "{{ grafana_users | default([]) }}"
+  when:
+    - grafana_users is defined
+    - grafana_user_id_map is defined
+    - item.login in grafana_user_id_map
+    - 1 in (item.org_memberships | default([]) | map(attribute='org_id') | list)
+
+- name: Remove users from Main Org when not in their org memberships
+  uri:
+    url: "https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}/api/orgs/1/users/{{ grafana_user_id_map[item.login] }}"
+    method: DELETE
+    headers:
+      Authorization: "Basic {{ ('admin:' + vault_grafana_admin_password) | b64encode }}"
+    status_code: [200, 404]
+    validate_certs: false
+  loop: "{{ grafana_users | default([]) }}"
+  when:
+    - grafana_users is defined
+    - grafana_user_id_map is defined
+    - item.login in grafana_user_id_map
+    - item.org_memberships is defined
+    - 1 not in (item.org_memberships | map(attribute='org_id') | list)
+
+# --- Alerting / Notification Provisioning ---
+
+- name: Create Grafana alerting provisioning directory
+  file:
+    path: /opt/monitoring/grafana/provisioning/alerting
+    state: directory
+    owner: 472
+    group: 472
+    mode: '0755'
+
+- name: Deploy contact points provisioning
+  template:
+    src: grafana/alerting/contactpoints.yml.j2
+    dest: /opt/monitoring/grafana/provisioning/alerting/contactpoints.yml
+    owner: 472
+    group: 472
+    mode: '0644'
+  when: grafana_orgs is defined
+
+- name: Deploy notification policies provisioning
+  template:
+    src: grafana/alerting/policies.yml.j2
+    dest: /opt/monitoring/grafana/provisioning/alerting/policies.yml
+    owner: 472
+    group: 472
+    mode: '0644'
+  when: grafana_orgs is defined
+
+- name: Reload Grafana alerting provisioning
+  uri:
+    url: "https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}/api/admin/provisioning/alerting/reload"
+    method: POST
+    headers:
+      Authorization: "Basic {{ ('admin:' + vault_grafana_admin_password) | b64encode }}"
+    status_code: [200, 204]
+    validate_certs: false
+  ignore_errors: yes
 
 - name: Display deployment status
   debug:
-    msg: "Observability stack deployed successfully. Access Grafana at https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}. Additional users and teams will be configured via Grafana API."
+    msg: "Observability stack deployed successfully. Access Grafana at https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}."
