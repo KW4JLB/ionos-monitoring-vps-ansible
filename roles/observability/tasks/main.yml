@@ -294,6 +294,44 @@
     - item.org_memberships is defined
     - 1 not in (item.org_memberships | map(attribute='org_id') | list)
 
+# --- Alerting / Notification Provisioning ---
+
+- name: Create Grafana alerting provisioning directory
+  file:
+    path: /opt/monitoring/grafana/provisioning/alerting
+    state: directory
+    owner: 472
+    group: 472
+    mode: '0755'
+
+- name: Deploy contact points provisioning
+  template:
+    src: grafana/alerting/contactpoints.yml.j2
+    dest: /opt/monitoring/grafana/provisioning/alerting/contactpoints.yml
+    owner: 472
+    group: 472
+    mode: '0644'
+  when: grafana_orgs is defined
+
+- name: Deploy notification policies provisioning
+  template:
+    src: grafana/alerting/policies.yml.j2
+    dest: /opt/monitoring/grafana/provisioning/alerting/policies.yml
+    owner: 472
+    group: 472
+    mode: '0644'
+  when: grafana_orgs is defined
+
+- name: Reload Grafana alerting provisioning
+  uri:
+    url: "https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}/api/admin/provisioning/alerting/reload"
+    method: POST
+    headers:
+      Authorization: "Basic {{ ('admin:' + vault_grafana_admin_password) | b64encode }}"
+    status_code: [200, 204]
+    validate_certs: false
+  ignore_errors: yes
+
 - name: Display deployment status
   debug:
     msg: "Observability stack deployed successfully. Access Grafana at https://{{ grafana_domain | default('monitoring.kw4jlb.com') }}."
