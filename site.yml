@@ -27,6 +27,13 @@
   roles:
     - grafana-asterisk
 
+- name: Install Proxmox VE Dashboards
+  hosts: monitoring
+  become: yes
+  tags: proxmox
+  roles:
+    - grafana-proxmox
+
 - name: Configure Automated Backups
   hosts: monitoring
   become: yes
