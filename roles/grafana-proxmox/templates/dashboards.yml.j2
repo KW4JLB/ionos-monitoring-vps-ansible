@@ -1,0 +1,11 @@
+apiVersion: 1
+providers:
+  - name: 'proxmox-dashboards-org{{ grafana_proxmox_org_id | default(2) }}'
+    orgId: {{ grafana_proxmox_org_id | default(2) }}
+    folder: 'Proxmox Monitoring'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 5
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards/proxmox
